@@ -1,0 +1,341 @@
+---
+title: "Análisis de datos ómicos - PEC1"
+author: "Malena Díaz"
+date: "2024-11-03"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+# Lectura de datos
+
+```{r, echo=FALSE}
+library(readr)
+library(MASS)
+library(SummarizedExperiment)
+data <- read_csv("./data/human_cachexia.csv", show_col_types = FALSE)
+data <- as.matrix(data)
+```
+
+```{r}
+#Añadimos datos "ficticios" sobre las variables recogidas para crear un experiment set más completo.
+
+categorias <- c("Carbohidrato", "Otro", "Aminoácido", "Otro", "Metabolito", "Aminoácido", "Lípido", "Lípido", "Otro", "Otro", "Carbohidrato", "Carbohidrato", "Lípido", "Aminoácido", "Aminoácido", "Otro", "Otro", "Metabolito", "Otro", "Otro", "Otro", "Otro", "Otro", "Carbohidrato", "Metabolito", "Carbohidrato", "Aminoácido", "Aminoácido", "Otro", "Otro", "Otro", "Aminoácido", "Otro", "Aminoácido", "Otro", "Aminoácido", "Aminoácido", "Otro", "Otro", "Otro", "Otro", "Otro", "Otro", "Metabolito", "Otro", "Aminoácido", "Metabolito", "Carbohidrato", "Otro", "Otro", "Aminoácido", "Otro", "Otro", "Aminoácido", "Aminoácido", "Otro", "Aminoácido", "Carbohidrato", "Otro", "Metabolito", "Otro", "Aminoácido", "Aminoácido")
+
+unidad_medida <- rep("mmol/L", length(categorias))
+
+```
+
+```{r}
+#Preparamos los datos 
+rownames(data) <- data[, "Patient ID"]
+counts <- t(data[, 3:ncol(data)])
+counts <- apply(counts, 2, as.numeric)
+rownames(counts) <- colnames(data[, 3:ncol(data)])
+
+#Prepara los datos de columnas
+labels <- as.factor(data[,2])
+colData <- DataFrame(group=labels, row.names=colnames(counts))
+
+# Crear el dataframe
+rowData <- data.frame( UnidadMedida = unidad_medida, Categoria = categorias,
+                       row.names = rownames(counts))
+
+myDesc <- list(name="Malena Díaz Río", lab="UOC - Análisis de datos ómicos", contact="mdiazrio@uoc.edu", url="https://rest.xialab.ca/api/download/metaboanalyst/human_cachexia.csv", title="Human cachexia")
+
+se <- SummarizedExperiment(assays=list(counts=counts), rowData=rowData,
+                           colData=colData, metadata = myDesc)
+
+metadata(se)
+```
+
+```{r}
+#exportamos el objeto 
+save(se, file='data/human_cachexia_summarized_exp.rda')
+```
+
+# Preprocesado, control de calidad y normalización
+
+```{r}
+#cargar los datos 
+load('data/human_cachexia_summarized_exp.rda')
+se
+```
+
+## Análisis de valores faltantes
+
+```{r}
+#Obtener el conteo de nulos por variable
+n_nulos_por_fila <- apply(assays(se)$counts, 1, function(x) sum(is.na(x)))
+sum(n_nulos_por_fila)
+```
+
+## Normalización de datos
+
+```{r}
+# Tenemos 63 variables, lo pintaremos en una matriz 8x8
+par(mfrow = c(8, 8), mar = c(1, 1, 1, 1), oma = c(2, 2, 2, 2))  
+
+# Crear un histograma por variable. 
+for (i in 1:63) {
+  hist(assays(se)$counts[i, ], main = "", xlab = "", ylab = "", col = "lightblue", border = "white")
+}
+```
+
+A simple vista, observamos que las variables no presentan una distribución normal por lo que aplicar el método IQR para la detección de valores anómalos resultará en la eliminación de valores válidos. Para crear una distribución normal, procederemos a normalizarla primero.
+
+```{r}
+par(mfrow = c(8, 8), mar = c(1, 1, 1, 1), oma = c(2, 2, 2, 2))  
+for (i in 1:63) {
+  hist(log(assays(se)$counts[i, ]), main = "", xlab = "", ylab = "", col = "lightblue", border = "white")
+}
+```
+
+Al aplicar el logaritmo podemos observar una distribución normal. Nos quedaremos con estás variables. Por ello, guardaremos los datos del logaritmo en el experimento.
+
+```{r}
+#Añadiremos estos datos al experimento para poder acceder a ellos fácilmente
+assays(se)$log_counts <- log(assays(se)$counts)
+```
+
+## Análisis de valores anómalos
+
+Ahora aplicamos el método IQR sobre las variables en forma logarítmica.
+
+```{r}
+# Calcular los cuartiles y el IQR
+Q1Q3 <- apply(assays(se)$log_counts, 1, function(x) quantile(x, probs = c(0.25, 0.75)))
+IQR <- Q1Q3[2,] - Q1Q3[1,]
+
+# Definir límites para detectar outliers
+limite_inferior <- Q1Q3[1,] - 1.5 * IQR
+limite_superior <- Q1Q3[2,] + 1.5 * IQR
+
+# Asignar un valor nulo a los valores anómalos 
+tmp_data <- assays(se)$log_counts
+for (i in 1:nrow(tmp_data)) {
+  tmp_data[i, tmp_data[i, ] < limite_inferior[i]] <- NaN
+  tmp_data[i, tmp_data[i, ] > limite_superior[i]] <- NaN
+}
+n_nulos_por_fila <- apply(tmp_data, 1, function(x) sum(is.na(x)))
+paste("Se han detectado", sum(n_nulos_por_fila), "valores anómalos")
+names(n_nulos_por_fila[n_nulos_por_fila>0])
+
+```
+
+Para controlar que el proceso de supresión de valores anómalos a través del rango IQR se ha ejecutado correctamente, representaremos aquellas variables en las cuales se ha detectado un valor anómalo junto con los rangos definidos.
+
+```{r}
+par(mfrow = c(4,4), mar = c(2, 2, 2, 2), oma = c(2, 2, 2, 2))  
+
+#crearemos un histograma con dos barras verticales que indiquen los rangos
+for (i in names(n_nulos_por_fila[n_nulos_por_fila>0])) {
+  hist(assays(se)$counts[i, ], main = paste(i), xlab = "", col = "lightblue", border = "black", breaks = 30)
+  
+  # Añadir límite inferior y superior
+  abline(v = exp(limite_inferior[i]), col = "red", lty = 2, lwd = 2) 
+  abline(v = exp(limite_superior[i]), col = "blue", lty = 2, lwd = 2)
+}
+
+```
+
+En vez de dejar nulos, imputaremos estos valores al valor límite definido por el rango IQR.
+
+```{r}
+tmp_data <- assays(se)$log_counts
+for (i in 1:nrow(tmp_data)) {
+  assays(se)$log_counts[i, tmp_data[i, ] < limite_inferior[i]] <- limite_inferior[i]
+  assays(se)$log_counts[i, tmp_data[i, ] > limite_superior[i]] <- limite_superior[i]
+  assays(se)$counts[i, tmp_data[i, ] < limite_inferior[i]] <- exp(limite_superior[i])
+  assays(se)$counts[i, tmp_data[i, ] > limite_superior[i]] <- exp(limite_superior[i])
+}
+```
+
+# Exploración de los datos
+
+### Análisis de distribuciones
+
+Creamos una tabla resumen con las diferencias en la media y desviación estándar para cada grupo y para cada variable. Además para cada variable realizamos una prueba t-test frente a los datos normalizadas que nos permita cuantificar en que medida se diferencian ambas poblaciones.
+
+```{r}
+resultados <- list() #Crear lista vacía
+
+for (var in rownames(rowData(se))) {
+  # Calcular la media y desviación estándar por grupo
+  stats <- aggregate(assays(se)$counts[var,], by = list(colData(se)$group), FUN = function(x) c(media = mean(x), sd = sd(x)))
+  
+  # Realizar la prueba t
+  t_test <- t.test(assays(se)$log_counts[var,] ~ colData(se)$group)
+  
+  # Almacenar resultados
+  resultados[[var]] <- data.frame(
+    "Grupo 1 media ± sd" = paste(round(stats[1, 2][[1]][1], 2), " ± ", round(stats[1, 2][[2]][1], 2)),
+    "Grupo 2 media ± sd" = paste(round(stats[2, 2][[1]][1], 2), " ± ", round(stats[2, 2][[2]][1], 2)),
+    p_value = round(t_test$p.value,5)
+  )
+}
+
+resultados_df <- do.call(rbind, resultados)
+
+# FDR
+resultados_df$fdr <- round(p.adjust(resultados_df$p_value, method = "fdr"), 5)
+
+print(resultados_df[order(resultados_df$p_value), ])
+```
+
+Representaremos las distribuciones, diferenciadas por grupo, de aquellas variables que han presentado una mayor diferencia estadística.
+
+```{r}
+for (var in rownames(resultados_df[order(resultados_df$p_value), ])[0:10]){
+  # Set up the plotting area
+  hist(assays(se[, se$group == "cachexic"])$counts[var,], 
+       col = rgb(1, 0, 0, 0.5), 
+       xlab = "Value", 
+       ylab = "Frequency", 
+       ylim=c(0,0.1),
+       main = paste("Histogram of", var),
+       freq = FALSE)
+  lines(density(assays(se[, se$group == "cachexic"])$counts[var,]), col = "red", lwd = 2)
+  
+  # Overlay the histogram for Group 2
+  hist(assays(se[, se$group == "control"])$counts[var,], 
+       col = rgb(0, 0, 1, 0.5),  
+       add = TRUE,
+       freq = FALSE)
+  lines(density(assays(se[, se$group == "control"])$counts[var,]), col = "blue", lwd = 2)
+
+  # Add a legend
+  legend("topright", 
+         legend = c("Group 1", "Group 2"), 
+         fill = c(rgb(1, 0, 0, 0.5), rgb(0, 0, 1, 0.5)))
+}
+```
+
+### Análisis de correlaciones
+
+Calculamos la correlación de cada variable frente a la variable objetivo y representamos aquellas con una correlación más alta en un diagrama de barras.
+
+```{r}
+correlations <- cor(t(assays(se)$counts), as.numeric(se$group))
+paste("Máxima correlación:", max(correlations))
+correlations[,1] <- sort(correlations)
+
+# Diagrama de barras
+par(mar = c(10, 3, 3, 2))  
+barplot(correlations[0:20,1], 
+        names.arg = rownames(correlations[0:20]),  
+        col = "steelblue",    
+        main = "Correlaciones con variable objetivo",    
+        ylab = "Counts",            
+        border = "black",
+        las = 2, cex.names=0.7)           
+```
+
+También es importante estudiar las correlaciones entre variables. Para ello calculamos el coeficiente de Pearson.
+
+```{r}
+cor_matrix <- cor(t(assays(se)$counts))
+
+library(reshape2)
+
+#Dar formato al dataframe para no ver cada par de variables repetidas ni la correlación entre la propia variable. 
+
+cor_long <- melt(cor_matrix)
+
+colnames(cor_long) <- c("Variable1", "Variable2", "Correlation")
+cor_long <- cor_long[cor_long$Variable1 != cor_long$Variable2, ]
+cor_long <- cor_long[order(-abs(cor_long$Correlation)), ]
+cor_long <- cor_long[!duplicated(t(apply(cor_long[, 1:2], 1, sort))), ]
+
+print(cor_long)
+```
+
+Podemos observar estas correlaciones en un diagrama scatter:
+
+```{r , fig.height=5}
+data <- t(assays(se)$counts)
+
+#Seleccionamos las primeras 8 filas de esta tabla
+top_correlations <- cor_long[order(abs(cor_long$Correlation), decreasing = TRUE), ][1:9, ]
+
+par(mfrow = c(3, 3), mar = c(2, 2, 1, 1)) 
+
+for (i in 1:nrow(top_correlations)) {
+  
+  var1 <- top_correlations$Variable1[i]  # Primera variable
+  var2 <- top_correlations$Variable2[i]  # Segunda variable
+  corr_value <- round(top_correlations$Correlation[i], 2)  # Correlación
+  
+  plot(assays(se)$counts[, var1 ], assays(se)$counts[, var2], 
+       main = paste(var1, "vs", var2, "- Corr:", corr_value), 
+       xlab = var1, 
+       ylab = var2, 
+       pch = 19, 
+       col = "blue")
+}
+```
+
+Para cada par variables con una correlación mayor a 0.8 escogeremos aquella que tenga un menor p-valor.
+
+```{r}
+columnas_borrar <- list()
+
+# Para cada par de variables con correlación > 0.8
+for (i in rownames(cor_long[cor_long$Correlation > 0.8, ])) {
+
+  var1 <- cor_long[i, "Variable1"] #nombre de las variables
+  var2 <- cor_long[i, "Variable2"]
+  
+  p_val1 <- resultados_df[var1, "p_value"] #p-valor
+  p_val2 <- resultados_df[var2, "p_value"]
+  
+  if (p_val1 < p_val2) { #columna a borrar 
+    columnas_borrar[[i]] <- var2
+  } else {
+    columnas_borrar[[i]] <- var1
+  }
+}
+
+se <- se[!rownames(se) %in% unlist(columnas_borrar), ]
+```
+
+# Análisis estadístico
+
+Creamos una regresión logística con aquellas variables disponibles que hanmostrado presentar más diferencias entre ambos grupos en el apartado exploración de datos.
+
+```{r}
+resultados_df <- resultados_df[!rownames(resultados_df) %in% unlist(columnas_borrar), ]
+
+top_20_rows <- rownames(resultados_df[order(resultados_df$p_value), ])[1:20]
+
+top_20_pvalue <- t(assays(se)$counts[top_20_rows, ])
+
+linear_model <- glm(as.numeric(se$group) - 1 ~ top_20_pvalue, family=binomial)
+
+summary(linear_model)
+```
+
+También crearemos una serie de regresiones logísticas con diferentes subconjuntos de variables para determinar que combinación de estas podría obtener un mejor rendimiento en el diagnóstico de pacientes con caquexia.
+
+```{r}
+group_data <- as.numeric(se$group) - 1
+
+# Modelo vacío
+modelo_vacio <- glm(group_data ~ 1, family = binomial, data=as.data.frame(top_20_pvalue))
+
+# Modelo completo (con todas las variables independientes)
+modelo_completo <- glm(group_data ~ . , family = binomial, data=as.data.frame(top_20_pvalue))
+
+step.model <- stepAIC(modelo_vacio, direction = "both", 
+                      scope = modelo_completo, trace = FALSE)
+
+# Aplicar selección hacia adelante
+modelo_seleccionado <- step(modelo_vacio, 
+                             direction = "forward", 
+                             scope = formula(modelo_completo), trace=0)  
+
+# Resumen del modelo seleccionado
+summary(step.model)
+```

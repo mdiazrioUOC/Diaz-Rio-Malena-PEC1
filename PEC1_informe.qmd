@@ -1,0 +1,608 @@
+---
+title: "PEC 1 - Análisis de datos ómicos"
+author: "Malena Díaz Río"
+date: "2024-11-3"
+format:
+    html: 
+      toc: true
+      toc-depth: 4
+      number-sections: true
+      embed-resources: true
+    pdf:
+      toc: true
+      toc-depth: 3
+      number-sections: true      
+knit:
+  quarto:
+    chunk_options:
+      echo: true
+      cache: false
+      prompt: false
+      tidy: true
+      comment: NA
+      message: false
+      warning: false
+    knit_options:
+      width: 75
+# reference-location: margin
+editor_options: 
+  chunk_output_type: console
+editor: 
+  markdown: 
+    wrap: 72
+---
+
+# Resumen ejecutivo
+
+En este estudio se realiza una exploración de datos sobre el set de
+datos público "human cachexia" con el fin de determinar qué metabolitos
+y qué valores de estos metabolitos podrían ser unos biomarcadores para
+poder diagnosticar de una forma preventiva la caquexia la cual padecen
+más del 80% de las víctimas con cáncer. Se ha realizado una limpieza y
+normalización de los datos, se han eliminado variables altamente
+correlacionadas y se han determiando las variables que más impacto
+pueden tener para resolver este reto mediante un análisis de
+correlaciones, pruebas estadísticas de comparación de grupos así como a
+través del análisis de los coeficientes de una regresión logística. Así,
+se ha obtenido que las variables que más utilidad presentan para
+diferenciar pacientes con caquexia son la Glucosa, la
+N,N-Dimethylglycine, la 3-Hydroxybutyrate, el Succinato y el Acetato
+donde valores altos indican que el paciente padece de esta enfermedad.
+Otras variables que podrían resultar de interés para un clínico son
+Adipato, el Quinolinato, la Leucina y la Valina. La principal limitación
+de este estudio es la falta de registros de control y el desbalanceo de
+pacientes sanos frente al número de pacientes con caquexia. Así, no se
+puede afirmar que los resultados obtenidos sean lo suficientemente
+robustos como para integrarlos en la práctica clínica.
+
+Todos el código utilizado para realizar este estudio está disponible en
+un repositorio Github que se encuentra en el siguiente enlace:
+<https://github.com/mdiazrioUOC/Diaz-Rio-Malena-PEC1.git>.
+
+# Objetivos del estudio
+
+La caquexia se define como la pérdida de músculo esquelético y grasa
+como efecto secundario del cáncer y se traduce en síntomas como
+debilidad o anorexia. Hoy en día es la causa principal del 30% de las
+víctimas con cáncer \[1\]. El motivo inicial por el que surge la
+caquexia no está claramente determinado siendo este un resultado de
+múltiples factores \[1\]. Así, el diagnóstico temprano de esta
+enfermedad a partir de biomarcadores de metabolitos podría ser una gran
+aportación a la comunidad científica \[2\]. De ahí nace la finalidad de
+este estudio que consiste en la comparación en la distribución de
+metabolitos entre dos grupos de pacientes: un grupo que padece de
+caquexia y un grupo de control. El fin es identificar aquellas variables
+con más diferencias significativas entre ambos grupos así como los
+valores de estas variables que empujarían al clínico a diagnosticar una
+caquexia.
+
+# Materiales y métodos
+
+El conjunto de datos utilizados para realizar este estudio es abierto y
+se puede obtener a través del siguiente enlace:
+<https://rest.xialab.ca/api/download/metaboanalyst/human_cachexia.csv>.
+Este dataset consiste en los datos de 77 pacientes de los cuales se han
+recogido 63 variables diferentes.  De los 77 pacientes 30 pertenecen al
+grupo de control y 47 al grupo que padece de caquexia. Las 63 variables
+son de tipo numérica (doubles) e indican el valor de diferentes
+metabolitos que pueden ser aminoácidos, carbohidratos, lípidos…etc en un
+momento determinado. Este conjunto de datos no tiene ningún valor
+faltante.
+
+Para llevar a cabo el análisis de los datos se ha utilizado el lenguaje
+de programación `R`. Además, se han explotado las librerías
+proporcionadas por el gestor de paquetes de Bioconductor que ayudan al
+usuario de datos ómicos a manipular los diferentes conjuntos de una
+manera eficaz.  Todo el código utilizado para la exploración de datos se
+encuentra dispuesto en un archivo de R markdown (.Rmd) con el fin de
+facilitar la visualización de los resultados.
+
+El estudio de las variables diferenciadoras entre pacientes con caquexia
+y sin ella se ha llevado a cabo en tres pasos siguiendo el flujo natural
+del proceso de datos ómicos. Una vez planteada la pregunta biológica y
+obtenidos los datos crudos se procedió a realizar un control de calidad,
+preprocesado y normalización de los datos. Más tarde se realizó una
+exploración de los datos estudiando tanto sus distribuciones por
+separado como las interacciones entre las diferentes variables del
+conjunto de datos. Finalmente, se procedió a realizar un análisis
+estadístico que pretende realizar la comparación en las variables de
+ambos grupos.
+
+## Preprocesado, control de calidad y normalización
+
+El primer paso al recibir los datos crudos fue la adaptación de estos a
+un formato fácilmente manejable. De esta forma, los datos se vuelcan en
+una estructura de tipo *Summarized* *Experiment* que permite condensar
+toda la información relativa al estudio en un único objeto. Así, se
+llevaron a cabo una serie de transformaciones en el set de datos
+original. Por una parte, se separó el dataset en dos conjuntos de datos,
+uno conteniendo la variable dependiente, es decir, el grupo de cada
+paciente en forma de factor y otro conjunto con todas las variables
+independientes. Este segundo conjunto de datos, para cumplir con el
+formato impuesto por el *Summarized* *Experiment* se traspuso obteniendo
+un dataset con una columna por paciente y una fila por variable. Además,
+se definió una serie de metadatos sobre el experimento incluyendo el
+autor y la fuente de los datos con el fin de garantizar la integridad de
+estos.   
+
+Una vez creada la estructura necesaria, se procedió a realizar el
+control de calidad. Este proceso trata de resolver tres preguntas
+claves: estudio de valores faltantes, estudio de valores anómalos e
+identificación de correlaciones altas. Para la identificación de valores
+anómalos se utilizó el criterio del rango IQR que consiste en
+identificar como valor anómalo todo aquel que quede fuera del rango
+$[\hat{x} - 1,5 IQR,\hat{x} + 1,5 IQR]$, siendo $\hat x$ el estimador de
+la media de cada variable en el conjunto de datos. Aquellos valores que
+salían del rango permitido se imputaron al mínimo o máximo valor que
+entrara dentro del rango.  
+
+Por último, se procedió a normalizar los datos. Este paso permite evitar
+que variables que tengan una escala mayor empujen al análisis
+estadístico a concluir que las diferencias entre ambos grupos de
+pacientes para esas variables es mayor frente a otras con una escala
+menor. Además, la mayoría de los análisis estadísticos requieren que las
+variables presenten una distribución normal. Por lo tanto, se calculó el
+logaritmo natural de todas las variables y este dataset se añadió al
+objeto *arrays* del objeto *SummarizedExperiment*.
+
+## Exploración de los datos
+
+Para entender el comportamiento del conjunto de variables se realizaron
+comparaciones de media y desviación estándar de los dos grupos. Para
+ello y asumiendo condiciones de normalidad, se realizó una prueba
+T-Test. Junto con el p-valor de esta prueba, se estudió el valor del FDR
+que pretende estimar la corrección de este valor frente a un conjunto de
+datos con un alto número de variables independientes. Además, se
+representaron las distribuciones de las variables con menor p-valor,
+esto es, con más diferencias significativas entre ambas poblaciones. Por
+último, se estudió la correlación de cada variable con la variable
+objetivo mediante el coeficiente de correlación de Pearson. Se realizó
+también un estudio de las correlaciones entre variables del set de datos
+con el fin de eliminar variables que tuvieran correlaciones muy altas y
+que, por lo tanto, estuvieran aportando información duplicada.
+
+## Análisis estadístico
+
+Una vez observadas las variables con más impacto en la variable objetivo
+así como sus distribuciones se llevó a cabo un análisis estadístico que
+permitiera extraer conclusiones robustas. Para ello se realizaron los
+siguientes pasos. Por una parte, se seleccionaron las 20 variables con
+menor p-valor y se ajustó una regresión logística para determinar si
+había diferencias significativas entre los pacientes con caquexia y los
+pacientes del grupo control. Además, se crearon una serie de modelos de
+regresión logística con diferentes conjuntos de variables para obtener
+aquella combinación que mejor rendimiento demostrase. De este modo, se
+utiliza el método de selección hacia delante. Mediante este análisis se
+obtuvieron las variables más significativas para el diagnóstico de
+caquexia. Por último, se realizó un estudio de los coeficientes de
+regresión mediante los cuales se observa qué valores de cada variable
+indican la presencia de esta enfermedad.
+
+# Resultados
+
+```{r , include=FALSE}
+load('./data/human_cachexia_summarized_exp.rda')
+library(SummarizedExperiment)
+library(knitr)
+library(MASS)
+```
+
+## Preprocesado, control de calidad y normalización
+
+El dataset human_cachexia presentó un 0% de nulos por lo que no hizo
+falta afrontar valores faltantes. Para el cálculo de los valores
+anómalos, se estudió la distribución de las variables mediante la
+representación de histogramas. La distribución para todas las variables
+resultó no cumplir con las condiciones de normalidad y seguir más bien
+una distribución exponencial como se puede apreciar en la figura 1. Así,
+se normalizó la distribución calculando el logaritmo natural de cada una
+de estas variables. La distribución original y la distribución después
+de calcular el logaritmo se pueden visualizar en las siguientes figuras:
+
+```{r DistribuciónOriginal, fig.cap="Distribución de las variables del set de datos human cachexia", echo=FALSE, fig.height=5}
+par(mfrow = c(8, 8), mar = c(1, 1, 1, 1), oma = c(2, 2, 2, 2))  
+for (i in 1:63) {
+  hist(assays(se)$counts[i, ], main = "", xlab = "", ylab = "", col = "lightblue", border = "white",  cex.lab = 0.5, cex.axis=0.5,
+)
+}
+```
+
+```{r DistribuciónLogarítima, fig.cap="Distribución de los logaritmos de las variables del set de datos human cachexia", echo=FALSE, fig.height=5}
+assays(se)$log_counts <- log(assays(se)$counts)
+
+par(mfrow = c(8, 8), mar = c(1, 1, 1, 1), oma = c(2, 2, 2, 2))  
+for (i in 1:63) {
+  hist(assays(se)$log_counts[i, ], main = "", xlab = "", ylab = "", col = "lightblue", border = "white",  cex.lab = 0.5, cex.axis=0.5)
+}
+```
+
+Una vez calculado el logaritmo y calculados los intervalos de valores
+válidos a partir del IQR, se obtuvieron 32 valores anómalos los cuales
+pertenecían a las variables 1-Methylnicotinamide, 2-Aminobutyrate,
+2-Oxoglutarate, 3-Aminoisobutyrate, Acetone, Adipate, Betaine, Citrate,
+Formate, Fumarate, Glucose, Lactate, Pantothenate, Sucrose, Tartrate y
+Xylose. Las variables Adipate y 2-Oxoglutarate presentaron 4 valores
+anómalos, esto es, un 5%. Con el fin de confirmar la validez de los
+rangos calculados en la figura 3 se puede observar los límites de los
+rangos frente a la distribución original de aquellas variables que
+presentaron valores anómalos.
+
+```{r IQR Range Calculation, include=FALSE}
+Q1Q3 <- apply(assays(se)$log_counts, 1, function(x) quantile(x, probs = c(0.25, 0.75)))
+IQR <- Q1Q3[2,] - Q1Q3[1,]
+
+# Definir límites para detectar outliers
+limite_inferior <- Q1Q3[1,] - 1.5 * IQR
+limite_superior <- Q1Q3[2,] + 1.5 * IQR
+
+# Asignar a los valores anómalos 
+tmp_data <- assays(se)$log_counts
+for (i in 1:nrow(tmp_data)) {
+  tmp_data[i, tmp_data[i, ] < limite_inferior[i]] <- NaN
+  tmp_data[i, tmp_data[i, ] > limite_superior[i]] <- NaN
+}
+n_nulos_por_fila <- apply(tmp_data, 1, function(x) sum(is.na(x)))
+```
+
+```{r Valores anómalos, fig.cap="Distribución de las variables con valores anómalos y rangos", echo=FALSE}
+par(mfrow = c(4,4), mar = c(2, 2, 2, 2))  
+
+for (i in names(n_nulos_por_fila[n_nulos_por_fila>0])) {
+  # Create histogram
+  hist(assays(se)$counts[i, ], main = paste(i, n_nulos_por_fila[i]), xlab = "", col = "lightblue", border = "black", breaks = 30)
+  
+  # Añadir límite inferior y superior
+  abline(v = exp(limite_inferior[i]), col = "red", lty = 2, lwd = 2) 
+  abline(v = exp(limite_superior[i]), col = "blue", lty = 2, lwd = 2)
+}
+```
+
+A través de estos histagramas se acepta la validez de los rangos ya que
+los valores que caen fuera de ellos se encuentran en posiciones
+extremas. Como se ha indicado en la sección de materiales y métodos
+estos valores anómalos fueron modificados de tal forma que cogieran el
+valor más cercano que estuviera dentro de los rangos IQR.
+
+```{r Imputación Valores Anómalos, include=FALSE}
+tmp_data <- assays(se)$log_counts
+for (i in 1:nrow(tmp_data)) {
+  assays(se)$log_counts[i, tmp_data[i, ] < limite_inferior[i]] <- limite_inferior[i]
+  assays(se)$log_counts[i, tmp_data[i, ] > limite_superior[i]] <- limite_superior[i]
+  assays(se)$counts[i, tmp_data[i, ] < limite_inferior[i]] <- exp(limite_superior[i])
+  assays(se)$counts[i, tmp_data[i, ] > limite_superior[i]] <- exp(limite_superior[i])
+}
+```
+
+## Exploración de los datos
+
+```{r Comparación de medias por variable, include=FALSE}
+# Inicializar listas para almacenar resultados
+resultados <- list()
+
+# Calcular la media, desviación estándar y prueba t para cada variable
+for (var in rownames(rowData(se))) {
+  # Calcular la media y desviación estándar por grupo
+  stats <- aggregate(assays(se)$counts[var,], by = list(colData(se)$group), FUN = function(x) c(media = mean(x), sd = sd(x)))
+  
+  # Realizar la prueba t
+  t_test <- t.test(assays(se)$log_counts[var,] ~ colData(se)$group)
+  
+  # Almacenar resultados
+  resultados[[var]] <- data.frame(
+    "Grupo 1 media ± sd" = paste(round(stats[1, 2][[1]][1], 2), " ± ", round(stats[1, 2][[2]][1], 2)),
+    "Grupo 2 media ± sd" = paste(round(stats[2, 2][[1]][1], 2), " ± ", round(stats[2, 2][[2]][1], 2)),
+    p_value = round(t_test$p.value,5)
+  )
+}
+
+# Convertir la lista de resultados en un data frame
+resultados_df <- do.call(rbind, resultados)
+
+# Ajustar p-values usando FDR
+resultados_df$fdr <- round(p.adjust(resultados_df$p_value, method = "fdr"), 5)
+
+colnames(resultados_df) <- c("Grupo 1 media +- sd", "Grupo 2 media +- sd", "p-valor", "FDR")
+```
+
+En un primer lugar, se procedió a la comparación de cada variable
+individualmente, realizando un t-test frente a las variables
+normalizadas. Mediante el p-valor observamos las variables que
+estadísticamente muestran más diferencias entre ambas poblaciones. A
+continuación se presenta la tabla que muestra las 15 variables con menor
+p-valor. En esta tabla también se observa la media y desviación estándar
+de cada grupo lo que nos da idea de qué valores podrían indicar la
+presencia de caquexia.
+
+```{r Tabla comparativa p-valor, echo=FALSE}
+kable(resultados_df[order(resultados_df[, "p-valor"]), ][1:20,],format = "html", caption = "15 variables más significativas ante un t-test para la comparación de dos grupos")
+```
+
+De las 63 variables disponibles en el set de datos 54 variables obtienen
+un p-valor de 0.05 en esta prueba, esto es un 85%. Este es un número
+bastante elevado de variables lo que puede indicar dos cosas. Por una
+parte, que el número de registros (de cada grupo 47 y 33) no sea
+suficientemente representativo y que, por lo tanto, casos extremos de
+uno de los grupos empujen a la prueba estadística a pensar que se tratan
+de dos poblaciones diferentes. Sin duda, los resultados de esta prueba
+serían más fiables si los datos perteneciesen a poblaciones más grandes.
+Por otra parte, este resultado puede ser verídico, es decir, que sí
+existan esas diferencias en la distribución en ambas variables. Para
+reforzar la hipótesis de que estas variables sí que presentan
+diferencias significativas procedemos al análisis de correlaciones.
+
+```{r DiagramaBarrasCorrelaciones, fig.cap="Índice de correlación de Pearson para las 20 variables con más correlación con la variable 'grupo'", echo=FALSE}
+correlations <- cor(t(assays(se)$counts), as.numeric(se$group))
+correlations[,1] <- sort(correlations)
+
+par(mar = c(10, 3, 3, 2))  
+barplot(correlations[0:20,1], 
+        names.arg = rownames(correlations[0:20]),  
+        col = "steelblue",             
+        main = "Correlaciones con variable objetivo",     
+        ylab = "Counts",               
+        border = "black",
+        las = 2, cex.names=0.5)          
+```
+
+Si comparamos estos resultados con los obtenidos anteriormente,
+observamos que la Glucosa, que en el análisis de comparación de medias
+parecía presentar diferencias significativas entre el grupo de control y
+el grupo que padece la enfermedad, no sale en la lista de variables con
+más correlación. Esto ocurre también para unas cuantas variables como la
+Acetona, o la Alanina. La variable 1,6-Anhydro-beta–D-glucose sería el
+caso contrario: alta correlación pero menor p-valor. Desde una
+perspectiva global, este análisis nos permite identificar variables que
+con alta probabilidad tienen una distribución diferente entre ambos
+grupos. Estas variables son aquellas que aparecen en la Tabla 1 y que
+además tienen una correlación elevada con la variable objetivo. Como se
+puede observar, un ejemplo de estas variables es la
+3-Hydroxyisovalerate, el acetato o la creatina.
+
+Antes de proceder con el análisis estadístico, realizamos un estudio de
+correlaciones entre todo el conjunto de variables independientes para
+evitar que dos variables altamente correlacionadas puedan afectar a los
+resultados del análisis estadístico. Después de calcular la correlación
+de Pearson para cada par de variables, mostramos en la Tabla 2 todas
+aquellas variables que presentan más de 0.8 de correlación y que por lo
+tanto habrá que filtrar.
+
+```{r Calculo Correlacion Variables, echo=FALSE}
+cor_matrix <- cor(t(assays(se)$counts))
+
+library(reshape2)
+cor_long <- melt(cor_matrix)
+
+colnames(cor_long) <- c("Variable1", "Variable2", "Correlation")
+cor_long <- cor_long[cor_long$Variable1 != cor_long$Variable2, ]
+cor_long <- cor_long[order(-abs(cor_long$Correlation)), ]
+cor_long <- cor_long[!duplicated(t(apply(cor_long[, 1:2], 1, sort))), ]
+
+cor_long <- cor_long[order(cor_long[, "Correlation"]), ]
+```
+
+```{r CorrelacionVariables}
+kable(cor_long[cor_long$Correlation > 0.8, ],format = "html", caption = "Variables con una correlación de Pearson mayor a 0.8")
+```
+
+Tras comparar cada par de variables de la Tabla 2 y seleccionar aquella
+con menos p-valor en la Tabla 1 completa, las siguientes variables
+fueron eliminadas del experimento: Valine, Serine, Creatinine,
+2-Oxoglutarate, Histidine, Asparagine, Threonine, Alanine, Glycine,
+Ethanolamine Dimethylamine, Hypoxanthine, Fucose. En la siguiente figura
+se observa un diagrama de puntos junto con el valor de correlación de
+los 9 pares de variables que mayor valor presentaban.
+
+```{r Diagrama de puntos, fig.height=5, echo=FALSE}
+
+#Seleccionamos las primeras 8 filas de esta tabla
+top_correlations <- cor_long[order(abs(cor_long$Correlation), decreasing = TRUE), ][1:9, ]
+
+par(mfrow = c(3, 3), mar = c(2, 2, 1, 1)) 
+
+for (i in 1:nrow(top_correlations)) {
+  
+  var1 <- top_correlations$Variable1[i]  # Primera variable
+  var2 <- top_correlations$Variable2[i]  # Segunda variable
+  corr_value <- round(top_correlations$Correlation[i], 2)  # Correlación
+  
+  plot(assays(se)$counts[, var1 ], assays(se)$counts[, var2], 
+       main = paste(var1, "vs", var2, "- Corr:", corr_value), 
+       cex.main = 0.7,
+       cex.lab = 0.8, cex.axis=0.8,
+       xlab = var1, 
+       ylab = var2, 
+       pch = 19, 
+       col = "blue")
+}
+```
+
+## Análisis estadístico
+
+Finalmente, para comprobar qué subconjunto de variables podrían ayudar
+más a un médico a decantarse por diagnosticar la enfermedad de caquexia,
+se ha realizado una regresión logística con las 20 variables que menos
+p-valor han presentado en la exploración de datos. El resumen del modelo
+lineal se presenta a continuación.
+
+```{r Calculos Regresión logística, include=FALSE}
+columnas_borrar <- list()
+
+# Para cada par de variables con correlación > 0.8
+for (i in rownames(cor_long[cor_long$Correlation > 0.8, ])) {
+
+  var1 <- cor_long[i, "Variable1"] #nombre de las variables
+  var2 <- cor_long[i, "Variable2"]
+  
+  p_val1 <- resultados_df[var1, "p-valor"] #p-valor
+  p_val2 <- resultados_df[var2, "p-valor"]
+  
+  if (p_val1 < p_val2) { #columna a borrar 
+    columnas_borrar[[i]] <- var2
+  } else {
+    columnas_borrar[[i]] <- var1
+  }
+}
+
+se <- se[!rownames(se) %in% unlist(columnas_borrar), ]
+
+resultados_df <- resultados_df[!rownames(resultados_df) %in% unlist(columnas_borrar), ]
+
+top_20_rows <- rownames(resultados_df[order(resultados_df$"p-valor"), ])[1:20]
+
+top_20_pvalue <- t(assays(se)$counts[top_20_rows, ])
+
+linear_model <- glm(as.numeric(se$group) - 1 ~ top_20_pvalue, family=binomial)
+```
+
+```{r Regresión logística}
+summary(linear_model)
+```
+
+En el modelo, observamos que diferentes variables presentan un p-valor
+en sus coeficientes de regresión menor a 0.05. Esto es, hay baja
+probabilidad de que estas variables no tengan efecto alguno sobre la
+variable objetivo lo que se traduce en que sí que hay diferencias entre
+las dos poblaciones. Las variables que cumplen con esta característica
+son: la Glucosa, la N,N-Dimethylglycine, la 3-Hydroxybutyrate, el
+Succinato y el Acetato.
+
+Como se puede observar a partir de los coeficientes de regresión, todas
+estas variables menos el Succinato tienen un coeficiente de regresión
+negativo por lo que a menor valor, será más probable que el sujeto
+pertenezca a la clase control. Observamos la diferencia de
+distribuciones en la siguiente figura:
+
+```{r Histogramas Por grupo, fig.cap="Comparación de distribuciones de las variables más significativas entre grupos", echo=FALSE, fig.height=4}
+par(mfrow = c(3,2), mar=c(2,2,1,1), oma = c(0, 0, 2, 0))
+
+for (var in c("Glucose", "N,N-Dimethylglycine", "3-Hydroxybutyrate", "Succinate", "Acetate")){
+  # Set up the plotting area
+  hist(assays(se[, se$group == "cachexic"])$counts[var,], 
+       col = rgb(1, 0, 0, 0.5), 
+       xlab = "Value", 
+       ylab = "Frequency", 
+       main = paste("Histogram of", var),
+       freq = FALSE)
+  lines(density(assays(se[, se$group == "cachexic"])$counts[var,]), col = "red", lwd = 2)
+  
+  # Overlay the histogram for Group 2
+  hist(assays(se[, se$group == "control"])$counts[var,], 
+       col = rgb(0, 0, 1, 0.5),  
+       add = TRUE,
+       freq = FALSE)
+  lines(density(assays(se[, se$group == "control"])$counts[var,]), col = "blue", lwd = 2)
+
+  # Add a legend
+  legend("topright", 
+         legend = c("Cachexic", "Control"), 
+         fill = c(rgb(1, 0, 0, 0.5), rgb(0, 0, 1, 0.5)))
+}
+```
+
+En estos gráficos se observa que los pacientes con caquexia presentan
+una distribución descentrada con una larga cola derecha. Esta es la
+principal razón por la cual el modelo de regresión logística asigna los
+valores negativos a los diferentes coeficientes de las variables más
+significativas. En todo caso, parece que el grupo de pacientes de
+caquexia tiene valores más extremos que aquellos del grupo control.
+
+Se utilizó la técnica de la selección hacia delante para crear un
+subconjunto de variables que minimizara el rendimiento de la regresión
+logística y se obtuvo el siguiente modelo lineal:
+
+```{r Regresion Logística FF, echo=FALSE, warning=FALSE}
+group_data <- as.numeric(se$group) - 1
+
+# Modelo vacío
+modelo_vacio <- glm(group_data ~ 1, family = binomial, data=as.data.frame(top_20_pvalue))
+
+# Modelo completo (con todas las variables independientes)
+modelo_completo <- glm(group_data ~ . , family = binomial, data=as.data.frame(top_20_pvalue))
+
+step.model <- stepAIC(modelo_vacio, direction = "both", 
+                      scope = modelo_completo, trace = FALSE)
+
+# Aplicar selección hacia adelante
+modelo_seleccionado <- step(modelo_vacio, 
+                             direction = "forward", 
+                             scope = formula(modelo_completo), trace=0)  
+```
+
+```{r Regresión logística summary}
+# Resumen del modelo seleccionado
+summary(step.model)
+```
+
+El modelo seleccionado es precisamente aquel que no coge ninguna
+variable. Esto indica que la suma de variables en conjunto no es capaz
+de diferenciar entre pacientes del grupo con caquexia y el grupo de
+control mejor que si lo hiciéramos al azar (30% probabilidad grupo
+control y 70% grupo caquexia).
+
+# Conclusiones
+
+A través de esta exploración de datos extraemos una serie de
+conclusiones. El objetivo principal de este estudio era determinar si
+existían metabolitos que pudiesen indicar la presencia de caquexia en
+pacientes con tal de poder realizar un diágnostico temprano de la
+enfermedad. Tras haber analizado los datos a través de pruebas
+estadísticas concluimos que las variables de Glucosa, la
+N,N-Dimethylglycine, la 3-Hydroxybutyrate, el Succinato y el Acetato son
+los biomarcadores que más importancia tendrían para tomar esta decisión.
+Valores más pequeños de estas variables en general indican que el
+paciente no padece la enfermedad mientras que valores extremos suelen
+indicar un estado de salud menos favorable. Otras variables que podrían
+ser interesantes son el Adipato, el Quinolinato, la Leucina y la Valina.
+Todas estas variables han demostrado tener distribuciones diferentes al
+enfrentarlas a una comparación de grupos mediante la prueba T. La Valina
+también puede ser un biomarcador interesante pero en este estudio se ha
+determinado que no es un metabolito tan relevante como los otros ya que
+presenta una correlación alta con la Leucina que presenta un menor
+p-valor en la comparación de distribuciones por grupo.
+
+Por otra parte, el análisis del método de selección hacia delante en el
+estudio de la regresión logística también nos indica cómo se comportan
+las variables en conjunto. Observamos que el modelo no encuentra un
+subconjunto de variables que maximicen el rendimiento de una forma
+significativa. Esto puede suponer que muchas veces estos valores
+extremos que empujan a pensar que el paciente padece caquexia no se dan
+en todas las variables, si no que es realmente solo una variable la que
+empujaría al modelo a tomar la decisión.
+
+# Discusión y limitaciones
+
+Como se ha observado en la última parte del análisis estadístico,
+observamos que las principales diferencias que el modelo encuentra entre
+ambos grupos es la presencia de valores extremos en los pacientes de
+caquexia. Por una parte, esto podría ajustarse a la realidad lo que
+implicaría que pacientes que padecen la enfermedad tienen en efecto
+valores más elevados. Sin embargo, también podría ser una consecuencia
+del alto número de pacientes con caquexia de los que disponemos frente
+al número de pacientes del grupo control. Cuanto menor es la muestra de
+la que se dispone, la distribución tenderá a tener menos valores
+extremos lo que podría ser la razón por la cual el grupo control
+presenta una distribución menos dispersa. Así, este desbalanceo
+perjudica enormemente la fiabilidad de los resultados obtenidos en este
+estudio. Para poder concluir con cierta robustex qué variables presentan
+diferencias entre ambos grupos, se necesitaría un mayor número de
+registros en general y en especial de pacientes del grupo control.
+
+Por otra parte, en este estudio sólamente se ha recurrido a técnicas
+basadas en estadística tradicional para determinar las variables con más
+impacto en los pacientes con caquexia. Sin embargo, hoy en día las
+técnicas más punteras están basadas en Machine Learning y en la
+literatura presentan mejores resultados que las técnicas utilizadas en
+este estudio. Por ello modelos basados en estructura de árbol como
+Random Forest o XGBoost podrían proporcionar a este problema un análisis
+más preciso.
+
+# Bibliografía
+
+\[1\] Instituto Nacional del Cáncer. (n.d.). Avances en el tratamiento
+de la caquexia Por Cáncer. Avances en el tratamiento de la caquexia por
+cáncer.
+<https://www.cancer.gov/espanol/cancer/tratamiento/investigacion/caquexia>
+
+\[2\] Costa, G. (1977). Cachexia, the Metabolic Component of Neoplastic
+Diseases. *Cancer Research*, *37*, 2327–2335.
+https://doi.org/10.1159/000385967
